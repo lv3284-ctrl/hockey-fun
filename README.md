@@ -10,12 +10,23 @@ const hitsEl = document.getElementById('hits');
 const energyEl = document.getElementById('energyFill');
 const modeLabelEl = document.getElementById('modeLabel');
 const clockEl = document.getElementById('clock');
+const speedStatEl = document.getElementById('speedStat');
+const possessionStatEl = document.getElementById('possessionStat');
+const accuracyStatEl = document.getElementById('accuracyStat');
+const pressureStatEl = document.getElementById('pressureStat');
+
+const homeCrestEl = document.getElementById('homeCrest');
+const awayCrestEl = document.getElementById('awayCrest');
+const homeNameEl = document.getElementById('homeName');
+const awayNameEl = document.getElementById('awayName');
 
 const rink = { x: 70, y: 40, w: 1060, h: 490, r: 100 };
 const keys = new Set();
 
 let state = 'menu';
 let mode = '1p';
+let selectedTeam = 'Northstars';
+let opponentTeam = 'Frostwolves';
 let lastTime = 0;
 let timer = 90;
 let homeScore = 0;
@@ -27,6 +38,16 @@ let energy = 100;
 let toastTimer = 0;
 let soundOn = true;
 let audioCtx = null;
+let musicLoop = null;
+let skaterPhase = 0;
+let possessionMeter = 50;
+let shotAttempts = 0;
+
+const teamPalettes = {
+  Northstars: { main: '#17c2ee', accent: '#9df3ff', crest: 'N', name: 'Northstars' },
+  Frostwolves: { main: '#fb7b75', accent: '#ffc0ac', crest: 'W', name: 'Frostwolves' },
+  Blizzard: { main: '#74d1ff', accent: '#d7f4ff', crest: 'B', name: 'Blizzard' }
+};
 
 const crowd = [];
 for (let i = 0; i < 80; i++) {
@@ -56,7 +77,8 @@ const player = {
   radius: 20,
   angle: 0,
   color: '#17c2ee',
-  name: 'YOU'
+  name: 'YOU',
+  team: 'home'
 };
 
 const winger = {
@@ -67,7 +89,8 @@ const winger = {
   radius: 17,
   angle: 0,
   color: '#9feef9',
-  name: '19'
+  name: '19',
+  team: 'home'
 };
 
 const rival1 = {
@@ -78,7 +101,8 @@ const rival1 = {
   radius: 20,
   angle: Math.PI,
   color: '#fb7b75',
-  name: '7'
+  name: '7',
+  team: 'away'
 };
 
 const rival2 = {
@@ -89,7 +113,8 @@ const rival2 = {
   radius: 17,
   angle: Math.PI,
   color: '#ffc0ac',
-  name: '24'
+  name: '24',
+  team: 'away'
 };
 
 const goalie = {
@@ -103,6 +128,29 @@ const particles = [];
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function setTeamDisplay() {
+  const homeData = teamPalettes[selectedTeam];
+  const awayData = teamPalettes[opponentTeam];
+
+  homeCrestEl.textContent = homeData.crest;
+  awayCrestEl.textContent = awayData.crest;
+  homeNameEl.textContent = homeData.name;
+  awayNameEl.textContent = awayData.name;
+
+  player.color = homeData.main;
+  winger.color = homeData.accent;
+  rival1.color = awayData.main;
+  rival2.color = awayData.accent;
+  homeCrestEl.style.background = `linear-gradient(135deg, ${homeData.main}, ${homeData.accent})`;
+  awayCrestEl.style.background = `linear-gradient(135deg, ${awayData.main}, ${awayData.accent})`;
+}
+
+function updateTeamSelectionButtons() {
+  document.querySelectorAll('.team-btn').forEach((button) => {
+    button.classList.toggle('active', button.dataset.team === selectedTeam);
+  });
 }
 
 function beep(freq = 440, duration = 0.08, type = 'sine', volume = 0.03) {
@@ -127,7 +175,28 @@ function beep(freq = 440, duration = 0.08, type = 'sine', volume = 0.03) {
     osc.start();
     osc.stop(audioCtx.currentTime + duration);
   } catch (err) {
-    // browser audio is optional
+    // ignore audio issues in restricted browsers
+  }
+}
+
+function startMusic() {
+  if (!soundOn || musicLoop) return;
+
+  const notes = [220, 277, 330, 392, 330, 277, 220, 196];
+  let index = 0;
+
+  musicLoop = setInterval(() => {
+    if (!soundOn || state !== 'playing') return;
+    const freq = notes[index % notes.length];
+    beep(freq, 0.12, 'triangle', 0.015);
+    index += 1;
+  }, 340);
+}
+
+function stopMusic() {
+  if (musicLoop) {
+    clearInterval(musicLoop);
+    musicLoop = null;
   }
 }
 
@@ -153,6 +222,13 @@ function updateHud() {
   energyEl.style.width = `${energy}%`;
   modeLabelEl.textContent = mode.toUpperCase();
   setClockText();
+
+  const speed = Math.hypot(player.vx, player.vy);
+  speedStatEl.textContent = `${Math.min(99, Math.round(speed / 3.4))}`;
+
+  possessionStatEl.textContent = `${possessionMeter}%`;
+  accuracyStatEl.textContent = `${Math.min(100, Math.round((shots ? (homeScore / shots) * 100 : 0)))}%`;
+  pressureStatEl.textContent = speed > 220 ? 'High' : speed > 120 ? 'Medium' : 'Low';
 }
 
 function resetFaceoff() {
@@ -196,6 +272,10 @@ function startGame(nextMode = mode) {
   saves = 0;
   hits = 0;
   energy = 100;
+  possessionMeter = 50;
+  shotAttempts = 0;
+
+  if (soundOn) startMusic();
   resetFaceoff();
   overlay.classList.add('hidden');
   updateHud();
@@ -224,26 +304,7 @@ function pauseGame() {
     state = 'playing';
     overlay.classList.add('hidden');
     lastTime = performance.now();
-    overlay.innerHTML = `
-      <div class="menu-panel" id="menuPanel">
-        <div class="eyebrow">The crowd is waiting</div>
-        <div class="menu-crest">🏒</div>
-        <h1>Five minutes<br><em>to glory</em></h1>
-        <p>Arcade hockey energy with a cinematic rush. Pick your mode, hit the ice, and chase the buzzer-beater.</p>
-        <div class="menu-actions">
-          <button class="primary-btn" data-mode="1p">Quick Start • 1P</button>
-          <button class="secondary-btn" data-mode="2p">Duel Mode • 2P</button>
-          <button class="ghost-btn" data-mode="practice">Practice</button>
-        </div>
-        <div class="menu-controls">
-          <div><span class="key">WASD</span> or <span class="key">Arrows</span> move</div>
-          <div><span class="key">SPACE</span> shoot</div>
-          <div><span class="key">SHIFT</span> sprint</div>
-          <div><span class="key">P</span> pass</div>
-        </div>
-      </div>
-    `;
-    bindModeButtons();
+    if (soundOn) startMusic();
   });
 }
 
@@ -264,7 +325,7 @@ function finishGame() {
         <span style="font-size:11px;letter-spacing:2px;color:#8ea7bf;text-transform:uppercase;">Final</span>
         <span style="color:#ff9382;">${awayScore}</span>
       </div>
-      <p>${isDraw ? 'Sudden-death pressure. Every shift matters.' : 'The crowd will be repeating that one all season.'}</p>
+      <p>${isDraw ? 'Sudden-death pressure. Every shift matters now.' : 'The crowd will be repeating that one all season.'}</p>
       <div class="menu-actions">
         <button class="primary-btn" id="againBtn">${isDraw ? 'Start overtime' : 'Play again'} ▶</button>
       </div>
@@ -274,87 +335,57 @@ function finishGame() {
   document.getElementById('againBtn').addEventListener('click', () => startGame(mode));
 }
 
-function bindModeButtons() {
-  document.querySelectorAll('[data-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const choice = btn.dataset.mode;
-      startGame(choice);
+function buildMenu() {
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div class="menu-panel" id="menuPanel">
+      <div class="eyebrow">The crowd is waiting</div>
+      <div class="menu-crest">🏒</div>
+      <h1>Five minutes<br><em>to glory</em></h1>
+      <p>Arcade hockey energy with a cinematic rush. Pick your mode, pick your club, and chase the buzzer-beater.</p>
+
+      <div class="team-select-wrap">
+        <div class="team-select-title">Choose your club</div>
+        <div class="team-select">
+          <button class="team-btn active" data-team="Northstars">Northstars</button>
+          <button class="team-btn" data-team="Frostwolves">Frostwolves</button>
+          <button class="team-btn" data-team="Blizzard">Blizzard</button>
+        </div>
+      </div>
+
+      <div class="menu-actions">
+        <button class="primary-btn" data-mode="1p">Quick Start • 1P</button>
+        <button class="secondary-btn" data-mode="2p">Duel Mode • 2P</button>
+        <button class="ghost-btn" data-mode="practice">Practice</button>
+      </div>
+
+      <div class="menu-controls">
+        <div><span class="key">WASD</span> or <span class="key">Arrows</span> move</div>
+        <div><span class="key">SPACE</span> shoot</div>
+        <div><span class="key">SHIFT</span> sprint</div>
+        <div><span class="key">P</span> pass</div>
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('.team-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedTeam = button.dataset.team;
+      opponentTeam = selectedTeam === 'Northstars' ? 'Frostwolves' : selectedTeam === 'Frostwolves' ? 'Blizzard' : 'Northstars';
+      updateTeamSelectionButtons();
+      setTeamDisplay();
     });
   });
+
+  document.querySelectorAll('[data-mode]').forEach((button) => {
+    button.addEventListener('click', () => {
+      startGame(button.dataset.mode);
+    });
+  });
+
+  setTeamDisplay();
+  updateTeamSelectionButtons();
 }
-
-document.querySelectorAll('[data-mode]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    startGame(btn.dataset.mode);
-  });
-});
-
-document.getElementById('soundToggle').addEventListener('click', () => {
-  soundOn = !soundOn;
-  document.getElementById('soundToggle').textContent = soundOn ? '♫' : '🔇';
-  if (soundOn) beep(440, 0.08, 'triangle', 0.03);
-});
-
-document.getElementById('pauseBtn').addEventListener('click', pauseGame);
-
-document.addEventListener('keydown', (event) => {
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
-    event.preventDefault();
-  }
-
-  if (event.key === 'Escape') {
-    pauseGame();
-    return;
-  }
-
-  if (event.key === 'p' || event.key === 'P') {
-    passPuck();
-    return;
-  }
-
-  if (event.key === ' ') {
-    shoot();
-    return;
-  }
-
-  if (!event.repeat) keys.add(event.key);
-});
-
-document.addEventListener('keyup', (event) => {
-  const key = event.key === ' ' ? 'Space' : event.key;
-  keys.delete(key);
-});
-
-document.querySelectorAll('[data-key]').forEach((button) => {
-  const key = button.dataset.key;
-  const release = () => keys.delete(key);
-  button.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    keys.add(key);
-  });
-  button.addEventListener('pointerup', release);
-  button.addEventListener('pointerleave', release);
-  button.addEventListener('pointercancel', release);
-});
-
-document.querySelectorAll('[data-hold]').forEach((button) => {
-  const key = button.dataset.hold;
-  const release = () => keys.delete(key);
-  button.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    keys.add(key);
-  });
-  button.addEventListener('pointerup', release);
-  button.addEventListener('pointerleave', release);
-  button.addEventListener('pointercancel', release);
-});
-
-document.querySelectorAll('[data-shoot]').forEach((button) => {
-  button.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    shoot();
-  });
-});
 
 function shoot() {
   if (state !== 'playing') return;
@@ -368,6 +399,7 @@ function shoot() {
     puck.vx = dx * 680 + player.vx * 0.4;
     puck.vy = dy * 680 + player.vy * 0.4;
     shots += 1;
+    shotAttempts += 1;
     burst(puck.x, puck.y, '#90f2ff', 10);
     beep(180, 0.12, 'triangle', 0.035);
     updateHud();
@@ -448,12 +480,48 @@ function updatePlayer(dt) {
 
   player.x += player.vx * dt;
   player.y += player.vy * dt;
-  player.x = clamp(player.x, rink.x + 25, rink.x + rink.w - 25);
+  player.x = clamp(player.x, rink.x + 30, rink.x + rink.w - 30);
   player.y = clamp(player.y, rink.y + 26, rink.y + rink.h - 26);
 }
 
+function updatePlayer2(dt) {
+  if (mode !== '2p') return;
+
+  let ax = 0;
+  let ay = 0;
+  if (keys.has('l') || keys.has('L')) ax += 1;
+  if (keys.has('j') || keys.has('J')) ax -= 1;
+  if (keys.has('k') || keys.has('K')) ay += 1;
+  if (keys.has('i') || keys.has('I')) ay -= 1;
+
+  const running = ax || ay;
+  if (running) {
+    const len = Math.hypot(ax, ay) || 1;
+    ax /= len;
+    ay /= len;
+    rival1.angle = Math.atan2(ay, ax);
+  }
+
+  rival1.vx += ax * 680 * dt;
+  rival1.vy += ay * 680 * dt;
+  rival1.vx *= running ? 0.93 : 0.88;
+  rival1.vy *= running ? 0.93 : 0.88;
+
+  const speed = Math.hypot(rival1.vx, rival1.vy);
+  if (speed > 260) {
+    rival1.vx = (rival1.vx / speed) * 260;
+    rival1.vy = (rival1.vy / speed) * 260;
+  }
+
+  rival1.x += rival1.vx * dt;
+  rival1.y += rival1.vy * dt;
+  rival1.x = clamp(rival1.x, rink.x + 120, rink.x + rink.w - 120);
+  rival1.y = clamp(rival1.y, rink.y + 60, rink.y + rink.h - 60);
+}
+
 function updateAI(dt) {
-  // Rival 1 pressures the puck
+  if (mode === '2p') return;
+
   let targetX = puck.x;
   let targetY = puck.y;
 
@@ -482,7 +550,6 @@ function updateAI(dt) {
   rival1.x = clamp(rival1.x, rink.x + 120, rink.x + rink.w - 120);
   rival1.y = clamp(rival1.y, rink.y + 60, rink.y + rink.h - 60);
 
-  // Rival 2 supports the chase
   let supportX = 620;
   let supportY = 240;
 
@@ -514,7 +581,6 @@ function updateAI(dt) {
   rival2.x = clamp(rival2.x, rink.x + 120, rink.x + rink.w - 120);
   rival2.y = clamp(rival2.y, rink.y + 60, rink.y + rink.h - 60);
 
-  // Winger tries to open a lane
   let wingX = player.x - 120;
   let wingY = clamp(player.y + 70, rink.y + 100, rink.y + rink.h - 100);
 
@@ -680,11 +746,14 @@ function update(dt) {
     }
 
     updatePlayer(dt);
+    updatePlayer2(dt);
     updateAI(dt);
     applyContact(player, rival1);
     applyContact(player, rival2);
     applyContact(winger, rival1);
     updatePuck(dt);
+
+    possessionMeter = clamp(possessionMeter + ((puck.owner === 'player' ? 1 : -1) * 8 * dt) + (mode === 'practice' ? 0.4 : 0), 10, 90);
 
     if (toastTimer > 0) {
       toastTimer -= dt;
@@ -703,6 +772,8 @@ function update(dt) {
     p.life -= dt;
     if (p.life <= 0) particles.splice(i, 1);
   }
+
+  skaterPhase += dt * 18;
 }
 
 function drawBackground() {
@@ -794,6 +865,8 @@ function drawSkater(s) {
   ctx.translate(s.x, s.y);
   ctx.rotate(s.angle);
 
+  const stride = Math.sin(skaterPhase + s.x * 0.04) * 6;
+
   ctx.fillStyle = 'rgba(0,0,0,0.16)';
   ctx.beginPath();
   ctx.ellipse(4, 12, s.radius * 1.15, s.radius * 0.8, 0, 0, Math.PI * 2);
@@ -803,13 +876,13 @@ function drawSkater(s) {
   ctx.lineWidth = 4;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(s.radius * 0.2, 2);
-  ctx.lineTo(s.radius + 18, 12);
+  ctx.moveTo(s.radius * 0.2, 2 + stride * 0.3);
+  ctx.lineTo(s.radius + 18, 12 + stride);
   ctx.stroke();
 
   ctx.fillStyle = '#162b3d';
-  ctx.fillRect(-s.radius * 0.45, s.radius * 0.7, s.radius * 0.62, 5);
-  ctx.fillRect(s.radius * 0.1, s.radius * 0.7, s.radius * 0.62, 5);
+  ctx.fillRect(-s.radius * 0.45, s.radius * 0.7 + stride * 0.6, s.radius * 0.62, 5);
+  ctx.fillRect(s.radius * 0.1, s.radius * 0.7 - stride * 0.6, s.radius * 0.62, 5);
 
   ctx.fillStyle = '#0c1d2f';
   ctx.beginPath();
@@ -916,13 +989,87 @@ function animate(timestamp) {
   requestAnimationFrame(animate);
 }
 
-bindModeButtons();
+function bindGameControls() {
+  document.addEventListener('keydown', (event) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
+      event.preventDefault();
+    }
+
+    if (event.key === 'Escape') {
+      pauseGame();
+      return;
+    }
+
+    if (event.key === 'p' || event.key === 'P') {
+      passPuck();
+      return;
+    }
+
+    if (event.key === ' ') {
+      shoot();
+      return;
+    }
+
+    if (!event.repeat) keys.add(event.key);
+  });
+
+  document.addEventListener('keyup', (event) => {
+    const key = event.key === ' ' ? 'Space' : event.key;
+    keys.delete(key);
+  });
+
+  document.querySelectorAll('[data-key]').forEach((button) => {
+    const key = button.dataset.key;
+    const release = () => keys.delete(key);
+    button.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      keys.add(key);
+    });
+    button.addEventListener('pointerup', release);
+    button.addEventListener('pointerleave', release);
+    button.addEventListener('pointercancel', release);
+  });
+
+  document.querySelectorAll('[data-hold]').forEach((button) => {
+    const key = button.dataset.hold;
+    const release = () => keys.delete(key);
+    button.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      keys.add(key);
+    });
+    button.addEventListener('pointerup', release);
+    button.addEventListener('pointerleave', release);
+    button.addEventListener('pointercancel', release);
+  });
+
+  document.querySelectorAll('[data-shoot]').forEach((button) => {
+    button.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      shoot();
+    });
+  });
+}
+
+function bindTopButtons() {
+  document.getElementById('soundToggle').addEventListener('click', () => {
+    soundOn = !soundOn;
+    document.getElementById('soundToggle').textContent = soundOn ? '♫' : '🔇';
+    if (soundOn) {
+      startMusic();
+      beep(440, 0.08, 'triangle', 0.03);
+    } else {
+      stopMusic();
+    }
+  });
+
+  document.getElementById('pauseBtn').addEventListener('click', pauseGame);
+}
+
+setTeamDisplay();
+updateTeamSelectionButtons();
+buildMenu();
+bindTopButtons();
+bindGameControls();
 updateHud();
 render();
 requestAnimationFrame(animate);
-
-window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    pauseGame();
-  }
-});

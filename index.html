@@ -25,9 +25,9 @@
 
       <div class="scoreboard">
         <div class="team home">
-          <div class="crest">N</div>
+          <div class="crest" id="homeCrest">N</div>
           <div class="team-meta">
-            <div class="team-name">Northstars</div>
+            <div class="team-name" id="homeName">Northstars</div>
             <div class="team-tag">Home • You</div>
           </div>
           <div class="score" id="homeScore">0</div>
@@ -42,10 +42,10 @@
         <div class="team away">
           <div class="score" id="awayScore">0</div>
           <div class="team-meta text-right">
-            <div class="team-name">Frostwolves</div>
+            <div class="team-name" id="awayName">Frostwolves</div>
             <div class="team-tag">Away • Rival</div>
           </div>
-          <div class="crest away-crest">W</div>
+          <div class="crest away-crest" id="awayCrest">W</div>
         </div>
       </div>
 
@@ -59,6 +59,13 @@
         </div>
       </div>
 
+      <div class="realtime-panel">
+        <div>Speed <strong id="speedStat">0</strong></div>
+        <div>Possession <strong id="possessionStat">50%</strong></div>
+        <div>Accuracy <strong id="accuracyStat">0%</strong></div>
+        <div>Pressure <strong id="pressureStat">Low</strong></div>
+      </div>
+
       <div class="arena-wrap">
         <canvas id="gameCanvas" width="1200" height="570" aria-label="Hockey arena"></canvas>
         <div class="toast" id="toast">Goal!</div>
@@ -68,7 +75,16 @@
             <div class="eyebrow">The crowd is waiting</div>
             <div class="menu-crest">🏒</div>
             <h1>Five minutes<br><em>to glory</em></h1>
-            <p>Arcade hockey energy with a cinematic rush. Pick your mode, hit the ice, and chase the buzzer-beater.</p>
+            <p>Arcade hockey energy with a cinematic rush. Pick your mode, pick your club, and chase the buzzer-beater.</p>
+
+            <div class="team-select-wrap">
+              <div class="team-select-title">Choose your club</div>
+              <div class="team-select">
+                <button class="team-btn active" data-team="Northstars">Northstars</button>
+                <button class="team-btn" data-team="Frostwolves">Frostwolves</button>
+                <button class="team-btn" data-team="Blizzard">Blizzard</button>
+              </div>
+            </div>
 
             <div class="menu-actions">
               <button class="primary-btn" data-mode="1p">Quick Start • 1P</button>

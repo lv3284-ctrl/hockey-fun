@@ -259,6 +259,24 @@ button {
   font-size: 11px;
 }
 
+.realtime-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px 16px;
+  padding: 10px 18px 12px;
+  background: rgba(9, 24, 35, 0.7);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  color: #9bb4c8;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+.realtime-panel strong {
+  color: #edf8ff;
+  margin-left: 4px;
+}
+
 .arena-wrap {
   position: relative;
   background: #0d2136;
@@ -317,7 +335,7 @@ canvas {
 
 .menu-panel {
   position: relative;
-  width: min(500px, 82%);
+  width: min(520px, 84%);
   padding: 26px 24px 22px;
   background: linear-gradient(180deg, rgba(18, 40, 58, 0.98), rgba(10, 21, 31, 0.96));
   border: 1px solid rgba(255,255,255,0.12);
@@ -373,10 +391,48 @@ canvas {
 .menu-panel p {
   position: relative;
   margin: 14px auto 0;
-  max-width: 360px;
+  max-width: 380px;
   color: #abc0d4;
   line-height: 1.7;
   font-size: 12px;
+}
+
+.team-select-wrap {
+  position: relative;
+  margin-top: 18px;
+}
+
+.team-select-title {
+  font-size: 9px;
+  color: #8ecae6;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+.team-select {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-btn {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: #edf8ff;
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  font-weight: 900;
+}
+
+.team-btn.active {
+  background: linear-gradient(135deg, rgba(94, 230, 255, 0.2), rgba(33, 144, 206, 0.2));
+  border-color: rgba(117, 226, 255, 0.4);
 }
 
 .menu-actions {
@@ -607,5 +663,9 @@ canvas {
 
   .menu-controls {
     grid-template-columns: 1fr;
+  }
+
+  .realtime-panel {
+    grid-template-columns: repeat(2, minmax(100px, 1fr));
   }
 }
